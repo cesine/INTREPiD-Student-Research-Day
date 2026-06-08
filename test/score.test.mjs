@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import {
+  buildRankingReviewNotes,
   calculateScores,
   groupPresenters,
   loadRecords,
   printAuditLog,
+  printTable,
 } from "../score.ts";
 
 function closeTo(actual, expected, tolerance = 0.00005) {
@@ -587,6 +589,178 @@ describe("research day scoring", () => {
       }],
     );
     assert.deepEqual(result.unresolvedTies, []);
+  });
+
+  it("reports prize cutoff margins and recommends review for close cutoffs", () => {
+    const syntheticRecords = [
+      ...presenterRows({
+        presenter: "Undergrad First",
+        scoresByJudge: { "JUDGE 1 SCORE": ["3", "3", "3", "3"] },
+      }),
+      ...presenterRows({
+        presenter: "Undergrad Second",
+        scoresByJudge: { "JUDGE 1 SCORE": ["2", "2", "2", "2"] },
+      }),
+      ...presenterRows({
+        presenter: "Undergrad Third",
+        scoresByJudge: { "JUDGE 1 SCORE": ["1.005", "1.005", "1.005", "1.005"] },
+      }),
+      ...presenterRows({
+        presenter: "Undergrad Fourth",
+        scoresByJudge: { "JUDGE 1 SCORE": ["1", "1", "1", "1"] },
+      }),
+      ...presenterRows({
+        presenter: "Prerecorded First",
+        group: "PRERECORDED",
+        scoresByJudge: { "JUDGE 1 SCORE": ["3", "3", "3", "3"] },
+      }),
+      ...presenterRows({
+        presenter: "Prerecorded Second",
+        group: "PRERECORDED",
+        scoresByJudge: { "JUDGE 1 SCORE": ["1", "1", "1", "1"] },
+      }),
+    ];
+
+    const result = calculateScores(
+      syntheticRecords,
+      syntheticHeaders.slice(0, 6),
+      "MEAN-CENTERING",
+    );
+
+    assert.deepEqual(
+      result.prizeCutoffReviews.map((review) => ({
+        poolName: review.poolName,
+        lastPrizeRank: review.lastPrizeRank,
+        lastPrizePresenter: review.lastPrizePresenter,
+        nextPresenter: review.nextPresenter,
+        isClose: review.isClose,
+      })),
+      [
+        {
+          poolName: "Undergraduate Live",
+          lastPrizeRank: 3,
+          lastPrizePresenter: "Undergrad Third",
+          nextPresenter: "Undergrad Fourth",
+          isClose: true,
+        },
+        {
+          poolName: "Pre-recorded",
+          lastPrizeRank: 1,
+          lastPrizePresenter: "Prerecorded First",
+          nextPresenter: "Prerecorded Second",
+          isClose: false,
+        },
+      ],
+    );
+    closeTo(result.prizeCutoffReviews[0].margin, 0.005);
+    assert.match(result.prizeCutoffReviews[0].recommendation, /Manual review recommended/);
+    assert.match(result.prizeCutoffReviews[1].recommendation, /No manual prize-cutoff review/);
+  });
+
+  it("renders final ranking notes for low margins and adjusted ties", () => {
+    const syntheticRecords = [
+      ...presenterRows({
+        presenter: "Clear First",
+        scoresByJudge: { "JUDGE 1 SCORE": ["3", "3", "3", "3"] },
+      }),
+      ...presenterRows({
+        presenter: "Close Second",
+        scoresByJudge: { "JUDGE 1 SCORE": ["2", "2", "2", "2"] },
+      }),
+      ...presenterRows({
+        presenter: "Close Third",
+        scoresByJudge: { "JUDGE 1 SCORE": ["1.995", "1.995", "1.995", "1.995"] },
+      }),
+      ...presenterRows({
+        presenter: "Tie Overall Better",
+        category: "graduate",
+        scoresByJudge: { "JUDGE 1 SCORE": ["2", "2", "1", "3"] },
+      }),
+      ...presenterRows({
+        presenter: "Tie Overall Lower",
+        category: "graduate",
+        scoresByJudge: { "JUDGE 1 SCORE": ["2", "2", "3", "1"] },
+      }),
+    ];
+    const result = calculateScores(
+      syntheticRecords,
+      syntheticHeaders.slice(0, 6),
+      "MEAN-CENTERING",
+    );
+
+    const undergraduateRows = result.rankings.get("Undergraduate Live");
+    const graduateRows = result.rankings.get("Graduate");
+    const undergraduateNotes = buildRankingReviewNotes(
+      "Undergraduate Live",
+      undergraduateRows,
+      result.tieBreaks,
+    );
+    const graduateNotes = buildRankingReviewNotes("Graduate", graduateRows, result.tieBreaks);
+
+    assert.match(
+      undergraduateNotes.get("Close Second").join("; "),
+      /low margin over Close Third/,
+    );
+    assert.match(
+      undergraduateNotes.get("Close Third").join("; "),
+      /low margin behind Close Second/,
+    );
+    assert.match(
+      graduateNotes.get("Tie Overall Better").join("; "),
+      /exact adjusted tie with Tie Overall Lower; ordered by Overall Impression/,
+    );
+    assert.match(
+      graduateNotes.get("Tie Overall Lower").join("; "),
+      /exact adjusted tie with Tie Overall Better; ordered by Overall Impression/,
+    );
+
+    const renderedLines = captureConsoleLog(() => printTable(undergraduateRows, undergraduateNotes));
+    assert.equal(
+      renderedLines[0],
+      "rank | presenter | adjusted score | raw mean | judges | prize | review note",
+    );
+    assert.ok(renderedLines.some((line) => line.includes("no statistical separation claimed")));
+  });
+
+  it("reports presenters with high disagreement across judge-centered scores", () => {
+    const syntheticRecords = [
+      ...presenterRows({
+        presenter: "Wide Disagreement",
+        scoresByJudge: {
+          "JUDGE 1 SCORE": ["3", "3", "3", "3"],
+          "JUDGE 2 SCORE": ["1", "1", "1", "1"],
+        },
+      }),
+      ...presenterRows({
+        presenter: "Narrow Disagreement",
+        scoresByJudge: {
+          "JUDGE 1 SCORE": ["2", "2", "2", "2"],
+          "JUDGE 2 SCORE": ["2", "2", "2", "2"],
+        },
+      }),
+      ...presenterRows({
+        presenter: "Opposite Wide Disagreement",
+        scoresByJudge: {
+          "JUDGE 1 SCORE": ["1", "1", "1", "1"],
+          "JUDGE 2 SCORE": ["3", "3", "3", "3"],
+        },
+      }),
+    ];
+
+    const result = calculateScores(syntheticRecords, syntheticHeaders, "MEAN-CENTERING");
+    const wideReview = result.judgeDisagreementReviews.find(
+      (review) => review.presenter === "Wide Disagreement",
+    );
+    const narrowReview = result.judgeDisagreementReviews.find(
+      (review) => review.presenter === "Narrow Disagreement",
+    );
+
+    closeTo(wideReview.centeredRange, 2);
+    assert.equal(wideReview.isHighDisagreement, true);
+    assert.match(wideReview.recommendation, /Manual review recommended/);
+
+    closeTo(narrowReview.centeredRange, 0);
+    assert.equal(narrowReview.isHighDisagreement, false);
   });
 
   it("prints intermediate audit rows sorted by score so score movement is visible", () => {

@@ -16,6 +16,8 @@ const EXPECTED_FIRST_COLUMNS = ["PRESENTER", "TITLE", "GROUP", "CATEGORY", "CRIT
 const VALID_GROUPS = new Set(["LIVE", "PRERECORDED"]);
 const VALID_CATEGORIES = new Set(["undergrad", "graduate"]);
 const VALID_CRITERIA = new Set<string>(EXPECTED_CRITERIA);
+const CLOSE_MARGIN_THRESHOLD = 0.01;
+const JUDGE_DISAGREEMENT_THRESHOLD = 0.75;
 
 const POOLS = [
   {
@@ -104,6 +106,26 @@ export type DataQualityIssue = {
   message: string;
 };
 
+export type PrizeCutoffReview = {
+  poolName: string;
+  lastPrizeRank: number;
+  lastPrizePresenter: string;
+  nextPresenter: string;
+  margin: number;
+  isClose: boolean;
+  recommendation: string;
+};
+
+export type JudgeDisagreementReview = {
+  presenter: string;
+  centeredMin: number;
+  centeredMax: number;
+  centeredRange: number;
+  judgeCount: number;
+  isHighDisagreement: boolean;
+  recommendation: string;
+};
+
 export type ScoreResult = {
   normalizationMethod: NormalizationMethod;
   presenterSummaries: PresenterSummary[];
@@ -114,6 +136,8 @@ export type ScoreResult = {
   noScorePresenters: PresenterSummary[];
   poolShortfalls: string[];
   tieBreaks: TieBreakAudit[];
+  prizeCutoffReviews: PrizeCutoffReview[];
+  judgeDisagreementReviews: JudgeDisagreementReview[];
   unresolvedTies: string[];
   dataQualityIssues: DataQualityIssue[];
 };
@@ -557,6 +581,104 @@ export function buildRanking(poolPresenters: PresenterSummary[], prizes: string[
     }));
 }
 
+export function buildJudgeDisagreementReviews(
+  summaries: PresenterSummary[],
+  judgeStats: JudgeStats[],
+): JudgeDisagreementReview[] {
+  const judgeMeans = new Map(judgeStats.map((judge) => [judge.judge, judge.mean]));
+
+  return summaries
+    .map((summary) => {
+      const centeredScores = [...summary.judgeRawScores.entries()]
+        .map(([judge, rawScore]) => {
+          const judgeMean = judgeMeans.get(judge);
+          return judgeMean === undefined ? null : rawScore - judgeMean;
+        })
+        .filter((value): value is number => value !== null);
+
+      if (centeredScores.length < 2) {
+        return null;
+      }
+
+      const centeredMin = Math.min(...centeredScores);
+      const centeredMax = Math.max(...centeredScores);
+      const centeredRange = centeredMax - centeredMin;
+      const isHighDisagreement = centeredRange >= JUDGE_DISAGREEMENT_THRESHOLD;
+
+      return {
+        presenter: summary.presenter,
+        centeredMin,
+        centeredMax,
+        centeredRange,
+        judgeCount: centeredScores.length,
+        isHighDisagreement,
+        recommendation: isHighDisagreement
+          ? "Manual review recommended: judge-centered scores vary widely for this presenter; inspect the raw criteria and judge coverage."
+          : "No manual disagreement review needed based on the configured threshold.",
+      };
+    })
+    .filter((review): review is JudgeDisagreementReview => review !== null)
+    .toSorted((left, right) => right.centeredRange - left.centeredRange);
+}
+
+export function buildRankingReviewNotes(
+  poolName: string,
+  rows: RankingRow[],
+  tieBreaks: TieBreakAudit[],
+): Map<string, string[]> {
+  const notes = new Map<string, string[]>();
+  const tieBreaksByPair = new Map(
+    tieBreaks.map((tieBreak) => [
+      `${tieBreak.poolName}\u0000${tieBreak.presenterA}\u0000${tieBreak.presenterB}`,
+      tieBreak,
+    ]),
+  );
+
+  const addNote = (presenter: string, note: string) => {
+    const existing = notes.get(presenter) ?? [];
+    existing.push(note);
+    notes.set(presenter, existing);
+  };
+
+  for (let index = 0; index < rows.length - 1; index += 1) {
+    const current = rows[index];
+    const next = rows[index + 1];
+    if (!current || !next || current.adjustedScore === null || next.adjustedScore === null) {
+      continue;
+    }
+
+    const tieBreak = tieBreaksByPair.get(`${poolName}\u0000${current.presenter}\u0000${next.presenter}`);
+    if (tieBreak) {
+      const note =
+        tieBreak.reason === "Unresolved"
+          ? `exact adjusted tie with ${next.presenter}; unresolved after tie-breakers`
+          : `exact adjusted tie with ${next.presenter}; ordered by ${tieBreak.reason}`;
+      addNote(current.presenter, `${note}; no statistical separation claimed`);
+      addNote(
+        next.presenter,
+        tieBreak.reason === "Unresolved"
+          ? `exact adjusted tie with ${current.presenter}; unresolved after tie-breakers; no statistical separation claimed`
+          : `exact adjusted tie with ${current.presenter}; ordered by ${tieBreak.reason}; no statistical separation claimed`,
+      );
+      continue;
+    }
+
+    const margin = current.adjustedScore - next.adjustedScore;
+    if (margin <= CLOSE_MARGIN_THRESHOLD) {
+      addNote(
+        current.presenter,
+        `low margin over ${next.presenter} (+${formatNumber(margin)}); no statistical separation claimed`,
+      );
+      addNote(
+        next.presenter,
+        `low margin behind ${current.presenter} (-${formatNumber(margin)}); no statistical separation claimed`,
+      );
+    }
+  }
+
+  return notes;
+}
+
 export function calculateScores(
   records: CsvRecord[],
   headers: string[],
@@ -567,9 +689,11 @@ export function calculateScores(
   const dataQualityIssues = validateData(records, headers, presenterGroups, judgeColumns);
   const summaries = buildSummaries(presenterGroups, judgeColumns);
   const judgeStats = normalizeScores(summaries, judgeColumns, normalizationMethod);
+  const judgeDisagreementReviews = buildJudgeDisagreementReviews(summaries, judgeStats);
   const rankings = new Map<string, RankingRow[]>();
   const poolShortfalls: string[] = [];
   const tieBreaks: TieBreakAudit[] = [];
+  const prizeCutoffReviews: PrizeCutoffReview[] = [];
   const unresolvedTies: string[] = [];
   const winners: string[] = [];
 
@@ -609,6 +733,27 @@ export function calculateScores(
     for (const row of ranking.filter((ranked) => ranked.prize !== "")) {
       winners.push(`${pool.name} ${row.rank}: ${row.presenter} (${row.prize})`);
     }
+
+    const lastPrizeIndex = pool.prizes.length - 1;
+    const lastPrizeWinner = ranking[lastPrizeIndex];
+    const nextPresenter = ranking[lastPrizeIndex + 1];
+    if (lastPrizeWinner && nextPresenter) {
+      const margin =
+        (lastPrizeWinner.adjustedScore ?? Number.NaN) -
+        (nextPresenter.adjustedScore ?? Number.NaN);
+      const isClose = Number.isFinite(margin) && margin <= CLOSE_MARGIN_THRESHOLD;
+      prizeCutoffReviews.push({
+        poolName: pool.name,
+        lastPrizeRank: lastPrizeWinner.rank,
+        lastPrizePresenter: lastPrizeWinner.presenter,
+        nextPresenter: nextPresenter.presenter,
+        margin,
+        isClose,
+        recommendation: isClose
+          ? "Manual review recommended before announcing: verify raw rows, judge coverage, and tie-break evidence for both presenters."
+          : "No manual prize-cutoff review needed based on the configured close-margin threshold.",
+      });
+    }
   }
 
   return {
@@ -623,14 +768,16 @@ export function calculateScores(
     noScorePresenters: summaries.filter((summary) => summary.judgeCount === 0),
     poolShortfalls,
     tieBreaks,
+    prizeCutoffReviews,
+    judgeDisagreementReviews,
     unresolvedTies,
     dataQualityIssues,
   };
 }
 
-export function printTable(rows: RankingRow[]): void {
-  console.log("rank | presenter | adjusted score | raw mean | judges | prize");
-  console.log("--- | --- | ---: | ---: | ---: | ---");
+export function printTable(rows: RankingRow[], reviewNotes = new Map<string, string[]>()): void {
+  console.log("rank | presenter | adjusted score | raw mean | judges | prize | review note");
+  console.log("--- | --- | ---: | ---: | ---: | --- | ---");
 
   if (rows.length === 0) {
     console.log("(no scored presenters)");
@@ -646,6 +793,7 @@ export function printTable(rows: RankingRow[]): void {
         formatNumber(row.rawMean),
         row.judgeCount,
         row.prize,
+        reviewNotes.get(row.presenter)?.join("; ") ?? "",
       ].join(" | "),
     );
   }
@@ -772,6 +920,36 @@ export function printAuditLog(
       );
     }
   }
+  console.log("\nPrize cutoff margin review");
+  if (result.prizeCutoffReviews.length === 0) {
+    console.log("- No pools had a scored presenter immediately below the final prize.");
+  } else {
+    for (const review of result.prizeCutoffReviews) {
+      console.log(
+        `- ${review.poolName}: rank ${review.lastPrizeRank} ${review.lastPrizePresenter} leads ${review.nextPresenter} by ${formatNumber(
+          review.margin,
+        )} adjusted points. ${review.recommendation}`,
+      );
+    }
+  }
+  console.log("\nJudge disagreement review");
+  const highDisagreementReviews = result.judgeDisagreementReviews.filter(
+    (review) => review.isHighDisagreement,
+  );
+  if (highDisagreementReviews.length === 0) {
+    console.log("- No presenters exceeded the judge-disagreement threshold.");
+  } else {
+    for (const review of highDisagreementReviews) {
+      console.log(
+        `- ${review.presenter}: judge-centered range=${formatNumber(
+          review.centeredRange,
+        )} across ${review.judgeCount} judges ` +
+          `(min=${formatNumber(review.centeredMin)}, max=${formatNumber(
+            review.centeredMax,
+          )}). ${review.recommendation}`,
+      );
+    }
+  }
 
   console.log("\nFinal ranked output");
 }
@@ -859,9 +1037,10 @@ export function main(): void {
 
   for (const pool of POOLS) {
     const ranking = result.rankings.get(pool.name) ?? [];
+    const reviewNotes = buildRankingReviewNotes(pool.name, ranking, result.tieBreaks);
 
     console.log(`\n${pool.name}`);
-    printTable(ranking);
+    printTable(ranking, reviewNotes);
   }
 
   console.log("\nWinners summary");

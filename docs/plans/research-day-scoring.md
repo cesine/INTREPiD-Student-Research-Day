@@ -112,7 +112,7 @@ Averaged each presenter's adjusted values across judges who scored them.
 
 Step 4 - Award pools
 - Undergraduate Live: 4 scored presenter(s), 3 prize(s) configured
-- Graduate: 7 scored presenter(s), 2 prize(s) configured
+- Graduate: 7 scored presenter(s), 3 prize(s) configured
 - Pre-recorded: 4 scored presenter(s), 1 prize(s) configured
 
 Step 5 - Rank within each pool
@@ -123,35 +123,45 @@ Sorted by adjusted score descending, then raw Overall Impression, then raw Resea
 Tie-break comparisons needed: 1.
 - Graduate: Richard Martinez Loyola vs Llewellyn Duncan used Overall Impression (adjusted=0.2619, overall 2.7500 vs 2.5000, research 2.5000 vs 2.2500)
 
+Prize cutoff margin review
+- Undergraduate Live: rank 3 Samuel Makaron leads Josephine Erlenbach by 0.3182 adjusted points. No manual prize-cutoff review needed based on the configured close-margin threshold.
+- Graduate: rank 3 Malachy Bodak leads Richard Martinez Loyola by 0.0057 adjusted points. Manual review recommended before announcing: verify raw rows, judge coverage, and tie-break evidence for both presenters.
+- Pre-recorded: rank 1 Jaren Tasmin leads Denisse Ramos by 0.2188 adjusted points. No manual prize-cutoff review needed based on the configured close-margin threshold.
+
+Judge disagreement review
+- Llewellyn Duncan: judge-centered range=1.1091 across 4 judges (min=-0.4091, max=0.7000). Manual review recommended: judge-centered scores vary widely for this presenter; inspect the raw criteria and judge coverage.
+- Maureen Sam-Okomgboeso: judge-centered range=0.9091 across 4 judges (min=-0.8182, max=0.0909). Manual review recommended: judge-centered scores vary widely for this presenter; inspect the raw criteria and judge coverage.
+- Samuel Makaron: judge-centered range=0.8278 across 3 judges (min=-0.9250, max=-0.0972). Manual review recommended: judge-centered scores vary widely for this presenter; inspect the raw criteria and judge coverage.
+
 Final ranked output
 Normalization method used: MEAN-CENTERING
 
 Undergraduate Live
-rank | presenter | adjusted score | raw mean | judges | prize
---- | --- | ---: | ---: | ---: | ---
-1 | Yeva Gevorgyan | 0.3093 | 2.7083 | 3 | $150
-2 | Kateryna Hanhur | -0.0241 | 2.3750 | 3 | $100
-3 | Samuel Makaron | -0.6074 | 1.7917 | 3 | $50
-4 | Josephine Erlenbach | -0.9256 | 1.3750 | 4 | 
+rank | presenter | adjusted score | raw mean | judges | prize | review note
+--- | --- | ---: | ---: | ---: | --- | ---
+1 | Yeva Gevorgyan | 0.3093 | 2.7083 | 3 | $150 | 
+2 | Kateryna Hanhur | -0.0241 | 2.3750 | 3 | $100 | 
+3 | Samuel Makaron | -0.6074 | 1.7917 | 3 | $50 | 
+4 | Josephine Erlenbach | -0.9256 | 1.3750 | 4 |  | 
 
 Graduate
-rank | presenter | adjusted score | raw mean | judges | prize
---- | --- | ---: | ---: | ---: | ---
-1 | Gabriela Martinez Loyola | 0.6994 | 3.0000 | 4 | $100
-2 | Ava Omidi | 0.3244 | 2.6250 | 4 | $50
-3 | Malachy Bodak | 0.2676 | 2.6667 | 3 | 
-4 | Richard Martinez Loyola | 0.2619 | 2.5625 | 4 | 
-5 | Llewellyn Duncan | 0.2619 | 2.5625 | 4 | 
-6 | Mariana Vasilita | -0.0436 | 2.2188 | 4 | 
-7 | Anik Rahman | -0.1131 | 2.1875 | 4 | 
+rank | presenter | adjusted score | raw mean | judges | prize | review note
+--- | --- | ---: | ---: | ---: | --- | ---
+1 | Gabriela Martinez Loyola | 0.6994 | 3.0000 | 4 | $100 | 
+2 | Ava Omidi | 0.3244 | 2.6250 | 4 | $50 | 
+3 | Malachy Bodak | 0.2676 | 2.6667 | 3 | $50 | low margin over Richard Martinez Loyola (+0.0057); no statistical separation claimed
+4 | Richard Martinez Loyola | 0.2619 | 2.5625 | 4 |  | low margin behind Malachy Bodak (-0.0057); no statistical separation claimed; exact adjusted tie with Llewellyn Duncan; ordered by Overall Impression; no statistical separation claimed
+5 | Llewellyn Duncan | 0.2619 | 2.5625 | 4 |  | exact adjusted tie with Richard Martinez Loyola; ordered by Overall Impression; no statistical separation claimed
+6 | Mariana Vasilita | -0.0436 | 2.2188 | 4 |  | 
+7 | Anik Rahman | -0.1131 | 2.1875 | 4 |  | 
 
 Pre-recorded
-rank | presenter | adjusted score | raw mean | judges | prize
---- | --- | ---: | ---: | ---: | ---
-1 | Jaren Tasmin | 0.2689 | 2.5313 | 4 | $150
-2 | Denisse Ramos | 0.0501 | 2.3125 | 4 | 
-3 | Maureen Sam-Okomgboeso | -0.2624 | 2.0000 | 4 | 
-4 | Teneesha Young | -0.4811 | 1.7813 | 4 | 
+rank | presenter | adjusted score | raw mean | judges | prize | review note
+--- | --- | ---: | ---: | ---: | --- | ---
+1 | Jaren Tasmin | 0.2689 | 2.5313 | 4 | $150 | 
+2 | Denisse Ramos | 0.0501 | 2.3125 | 4 |  | 
+3 | Maureen Sam-Okomgboeso | -0.2624 | 2.0000 | 4 |  | 
+4 | Teneesha Young | -0.4811 | 1.7813 | 4 |  | 
 
 Winners summary
 - Undergraduate Live 1: Yeva Gevorgyan ($150)
@@ -159,6 +169,7 @@ Winners summary
 - Undergraduate Live 3: Samuel Makaron ($50)
 - Graduate 1: Gabriela Martinez Loyola ($100)
 - Graduate 2: Ava Omidi ($50)
+- Graduate 3: Malachy Bodak ($50)
 - Pre-recorded 1: Jaren Tasmin ($150)
 
 Flags
@@ -180,3 +191,17 @@ Unresolved ties after all tie-breakers:
 
 Other data quality checks:
 - [judge-coverage] JUDGE 7 SCORE: no scores found in this sheet
+
+I’d treat the Graduate 3rd-place result as valid but mark it for human review before announcing.
+
+Reason:
+
+Malachy is ahead of Richard/Llewellyn by only about 0.0057 adjusted points.
+The Z-score sensitivity check keeps Malachy in 3rd, so the result is not an artifact of mean-centering alone.
+Richard and Llewellyn are tied with each other and needed the Overall Impression tie-breaker, but both remain just behind Malachy.
+My suggestion:
+
+Keep Malachy as 3rd under the published scoring rule.
+Add a note in the results audit: “Graduate 3rd place was close; reviewed because the margin to the next adjusted score was 0.0057.”
+Manually inspect the raw score rows for Malachy, Richard, and Llewellyn to confirm there are no missing, transcribed, or category issues.
+If the organizers are uncomfortable with such a small margin, decide explicitly whether to award an additional discretionary $50 honorable mention rather than changing the scoring rule after the fact.
