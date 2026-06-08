@@ -26,7 +26,7 @@ const POOLS = [
   },
   {
     name: "Graduate",
-    prizes: ["$100", "$50"],
+    prizes: ["$100", "$50", "$50"],
     includes: (presenter: PresenterSummary) => presenter.category === "graduate",
   },
   {

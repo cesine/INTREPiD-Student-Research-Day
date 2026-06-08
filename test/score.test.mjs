@@ -151,6 +151,16 @@ describe("research day scoring", () => {
         scoresByJudge: { "JUDGE 1 SCORE": ["3", "3", "3", "3"] },
       }),
       ...presenterRows({
+        presenter: "Graduate Second A",
+        category: "graduate",
+        scoresByJudge: { "JUDGE 1 SCORE": ["2.5", "2.5", "2.5", "2.5"] },
+      }),
+      ...presenterRows({
+        presenter: "Graduate Second B",
+        category: "graduate",
+        scoresByJudge: { "JUDGE 1 SCORE": ["2", "2", "2", "2"] },
+      }),
+      ...presenterRows({
         presenter: "Prerecorded First",
         group: "PRERECORDED",
         scoresByJudge: { "JUDGE 1 SCORE": ["2.5", "2.5", "2.5", "2.5"] },
@@ -185,6 +195,8 @@ describe("research day scoring", () => {
       graduate.map((row) => [row.rank, row.presenter, row.prize]),
       [
         [1, "Graduate First", "$100"],
+        [2, "Graduate Second A", "$50"],
+        [3, "Graduate Second B", "$50"],
       ],
     );
 
@@ -202,6 +214,8 @@ describe("research day scoring", () => {
       "Undergraduate Live 2: Undergrad Second ($100)",
       "Undergraduate Live 3: Undergrad Third ($50)",
       "Graduate 1: Graduate First ($100)",
+      "Graduate 2: Graduate Second A ($50)",
+      "Graduate 3: Graduate Second B ($50)",
       "Pre-recorded 1: Prerecorded First ($150)",
     ]);
   });
@@ -269,7 +283,7 @@ describe("research day scoring", () => {
 
     assert.deepEqual(result.poolShortfalls, [
       "Undergraduate Live: 1 scored presenter(s) for 3 prize(s)",
-      "Graduate: 0 scored presenter(s) for 2 prize(s)",
+      "Graduate: 0 scored presenter(s) for 3 prize(s)",
       "Pre-recorded: 0 scored presenter(s) for 1 prize(s)",
     ]);
     assert.deepEqual(result.unresolvedTies, []);
@@ -328,7 +342,7 @@ describe("research day scoring", () => {
     );
     assert.deepEqual(result.poolShortfalls, [
       "Undergraduate Live: 1 scored presenter(s) for 3 prize(s)",
-      "Graduate: 0 scored presenter(s) for 2 prize(s)",
+      "Graduate: 0 scored presenter(s) for 3 prize(s)",
       "Pre-recorded: 0 scored presenter(s) for 1 prize(s)",
     ]);
   });
