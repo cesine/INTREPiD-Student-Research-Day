@@ -74,6 +74,7 @@ export type RankingRow = PresenterSummary & {
 
 export type ScoreResult = {
   normalizationMethod: NormalizationMethod;
+  presenterSummaries: PresenterSummary[];
   rankings: Map<string, RankingRow[]>;
   winners: string[];
   judgeStats: JudgeStats[];
@@ -394,6 +395,7 @@ export function calculateScores(
 
   return {
     normalizationMethod,
+    presenterSummaries: summaries,
     rankings,
     winners,
     judgeStats,
@@ -427,6 +429,75 @@ export function printTable(rows: RankingRow[]): void {
       ].join(" | "),
     );
   }
+}
+
+function formatJudgeScoreList(summary: PresenterSummary): string {
+  const scores = [...summary.judgeRawScores.entries()].map(
+    ([judge, score]) => `${judge}=${formatNumber(score)}`,
+  );
+
+  return scores.length === 0 ? "no judge scores" : scores.join("; ");
+}
+
+function printAuditLog(result: ScoreResult, headers: string[], records: CsvRecord[]): void {
+  const judgeColumns = headers.slice(5);
+
+  console.log("Scoring audit log");
+  console.log(`Layout: read ${records.length} scoring row(s).`);
+  console.log(`Layout: columns A-E = ${headers.slice(0, 5).join(", ")}.`);
+  console.log(`Layout: judge columns F onward = ${judgeColumns.join(", ")}.`);
+  console.log(
+    `Layout: grouped rows into ${result.presenterSummaries.length} presenter/title block(s), expecting 4 criteria per block.`,
+  );
+
+  console.log("\nStep 1 - One number per judge, per presenter");
+  console.log(
+    "For each presenter and judge, averaged that judge's non-blank criterion scores across the four rows.",
+  );
+  for (const summary of result.presenterSummaries) {
+    console.log(`- ${summary.presenter}: ${formatJudgeScoreList(summary)}`);
+  }
+
+  console.log("\nStep 2 - Adjust for judge leniency");
+  console.log(`Normalization method selected: ${result.normalizationMethod}.`);
+  for (const judge of result.judgeStats) {
+    const fallbackNote = judge.usedFallback ? " (fell back to mean-centering)" : "";
+    console.log(
+      `- ${judge.judge}: presenter scores=${judge.scoreCount}, mean=${formatNumber(
+        judge.mean,
+      )}, stddev=${formatNumber(judge.standardDeviation)}${fallbackNote}`,
+    );
+  }
+
+  console.log("\nStep 3 - Final score per presenter");
+  console.log("Averaged each presenter's adjusted values across judges who scored them.");
+  for (const summary of result.presenterSummaries) {
+    console.log(
+      `- ${summary.presenter}: adjusted=${formatNumber(summary.adjustedScore)}, raw mean=${formatNumber(
+        summary.rawMean,
+      )}, judges=${summary.judgeCount}`,
+    );
+  }
+
+  console.log("\nStep 4 - Award pools");
+  for (const pool of POOLS) {
+    const rows = result.rankings.get(pool.name) ?? [];
+    console.log(
+      `- ${pool.name}: ${rows.length} scored presenter(s), ${pool.prizes.length} prize(s) configured`,
+    );
+  }
+
+  console.log("\nStep 5 - Rank within each pool");
+  console.log(
+    "Sorted by adjusted score descending, then raw Overall Impression, then raw Research Quality & Significance.",
+  );
+  for (const pool of POOLS) {
+    const rows = result.rankings.get(pool.name) ?? [];
+    const ranked = rows.map((row) => `${row.rank}. ${row.presenter}`).join("; ");
+    console.log(`- ${pool.name}: ${ranked === "" ? "no scored presenters" : ranked}`);
+  }
+
+  console.log("\nFinal ranked output");
 }
 
 export function printWarnings(
@@ -495,6 +566,8 @@ export function printWarnings(
 export function main(): void {
   const { headers, records } = loadRecords(resolve(DATA_FILE));
   const result = calculateScores(records, headers, NORMALIZATION_METHOD);
+
+  printAuditLog(result, headers, records);
 
   console.log(`Normalization method used: ${result.normalizationMethod}`);
 

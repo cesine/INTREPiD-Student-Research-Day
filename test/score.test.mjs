@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import {
   calculateScores,
+  groupPresenters,
   loadRecords,
 } from "../score.ts";
 
@@ -20,6 +21,56 @@ function rowByPresenter(rows, presenter) {
 
 describe("research day scoring", () => {
   const { headers, records } = loadRecords(resolve("data.csv"));
+
+  it("reads the judging sheet layout as four criterion rows followed by judge columns", () => {
+    assert.deepEqual(headers.slice(0, 5), [
+      "PRESENTER",
+      "TITLE",
+      "GROUP",
+      "CATEGORY",
+      "CRITERION",
+    ]);
+    assert.deepEqual(headers.slice(5), [
+      "JUDGE 1 SCORE C Stathis",
+      "JUDGE 2 SCORE Poppy",
+      "JUDGE 3 SCORE Maria",
+      "JUDGE 4 SCORE Anastasiia",
+      "JUDGE 5 SCORE Gina",
+      "JUDGE 6 SCORE Ashwini",
+      "JUDGE 7 SCORE",
+    ]);
+
+    const expectedCriteria = [
+      "Organization & Visuals",
+      "Communication & Delivery",
+      "Research Quality & Significance",
+      "Overall Impression",
+    ];
+    const presenterGroups = groupPresenters(records);
+
+    assert.equal(records.length, presenterGroups.length * expectedCriteria.length);
+
+    for (const presenterGroup of presenterGroups) {
+      assert.equal(
+        presenterGroup.rows.length,
+        expectedCriteria.length,
+        `${presenterGroup.presenter} should occupy exactly four rows`,
+      );
+      assert.deepEqual(
+        presenterGroup.rows.map((row) => row.CRITERION),
+        expectedCriteria,
+        `${presenterGroup.presenter} criteria should be in the expected order`,
+      );
+      assert.ok(
+        presenterGroup.rows.every((row) => row.PRESENTER === presenterGroup.presenter),
+        `${presenterGroup.presenter} rows should keep the same presenter`,
+      );
+      assert.ok(
+        presenterGroup.rows.every((row) => row.TITLE === presenterGroup.title),
+        `${presenterGroup.presenter} rows should keep the same title`,
+      );
+    }
+  });
 
   it("ranks award pools by mean-centered adjusted score and assigns prizes", () => {
     const result = calculateScores(records, headers, "MEAN-CENTERING");
@@ -81,9 +132,9 @@ describe("research day scoring", () => {
     closeTo(samuel.rawMean, 1.7916666667);
     assert.equal(samuel.judgeCount, 3);
 
-    closeTo(teneesha.adjustedScore, -0.5240740741);
-    closeTo(teneesha.rawMean, 1.7083333333);
-    assert.equal(teneesha.judgeCount, 3);
+    closeTo(teneesha.adjustedScore, -0.4034722222);
+    closeTo(teneesha.rawMean, 1.78125);
+    assert.equal(teneesha.judgeCount, 4);
   });
 
   it("flags required data-quality conditions", () => {
