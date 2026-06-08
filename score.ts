@@ -659,7 +659,44 @@ function formatJudgeScoreList(summary: PresenterSummary): string {
   return scores.length === 0 ? "no judge scores" : scores.join("; ");
 }
 
-function printAuditLog(result: ScoreResult, headers: string[], records: CsvRecord[]): void {
+function compareNullableNumbersDescending(left: number | null, right: number | null): number {
+  if (left === null && right === null) {
+    return 0;
+  }
+
+  if (left === null) {
+    return 1;
+  }
+
+  if (right === null) {
+    return -1;
+  }
+
+  return right - left;
+}
+
+function compareSummariesByRawMean(left: PresenterSummary, right: PresenterSummary): number {
+  return (
+    compareNullableNumbersDescending(left.rawMean, right.rawMean) ||
+    left.presenter.localeCompare(right.presenter)
+  );
+}
+
+function compareSummariesByAdjustedScore(
+  left: PresenterSummary,
+  right: PresenterSummary,
+): number {
+  return (
+    compareNullableNumbersDescending(left.adjustedScore, right.adjustedScore) ||
+    left.presenter.localeCompare(right.presenter)
+  );
+}
+
+export function printAuditLog(
+  result: ScoreResult,
+  headers: string[],
+  records: CsvRecord[],
+): void {
   const judgeColumns = headers.slice(5);
 
   console.log("Scoring audit log");
@@ -674,8 +711,12 @@ function printAuditLog(result: ScoreResult, headers: string[], records: CsvRecor
   console.log(
     "For each presenter and judge, averaged that judge's non-blank criterion scores across the four rows.",
   );
-  for (const summary of result.presenterSummaries) {
-    console.log(`- ${summary.presenter}: ${formatJudgeScoreList(summary)}`);
+  for (const summary of result.presenterSummaries.toSorted(compareSummariesByRawMean)) {
+    console.log(
+      `- ${summary.presenter}: raw mean=${formatNumber(summary.rawMean)}; ${formatJudgeScoreList(
+        summary,
+      )}`,
+    );
   }
 
   console.log("\nStep 2 - Adjust for judge leniency");
@@ -691,7 +732,7 @@ function printAuditLog(result: ScoreResult, headers: string[], records: CsvRecor
 
   console.log("\nStep 3 - Final score per presenter");
   console.log("Averaged each presenter's adjusted values across judges who scored them.");
-  for (const summary of result.presenterSummaries) {
+  for (const summary of result.presenterSummaries.toSorted(compareSummariesByAdjustedScore)) {
     console.log(
       `- ${summary.presenter}: adjusted=${formatNumber(summary.adjustedScore)}, raw mean=${formatNumber(
         summary.rawMean,

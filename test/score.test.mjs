@@ -4,6 +4,7 @@ import {
   calculateScores,
   groupPresenters,
   loadRecords,
+  printAuditLog,
 } from "../score.ts";
 
 function closeTo(actual, expected, tolerance = 0.00005) {
@@ -17,6 +18,32 @@ function rowByPresenter(rows, presenter) {
   const row = rows.find((candidate) => candidate.presenter === presenter);
   assert.ok(row, `missing presenter ${presenter}`);
   return row;
+}
+
+function captureConsoleLog(callback) {
+  const originalLog = console.log;
+  const lines = [];
+  console.log = (...args) => {
+    lines.push(args.join(" "));
+  };
+
+  try {
+    callback();
+  } finally {
+    console.log = originalLog;
+  }
+
+  return lines;
+}
+
+function linesBetween(lines, start, end) {
+  const startIndex = lines.indexOf(start);
+  const endIndex = lines.indexOf(end);
+
+  assert.notEqual(startIndex, -1, `missing start line: ${start}`);
+  assert.notEqual(endIndex, -1, `missing end line: ${end}`);
+
+  return lines.slice(startIndex + 1, endIndex);
 }
 
 const syntheticHeaders = [
@@ -546,6 +573,54 @@ describe("research day scoring", () => {
       }],
     );
     assert.deepEqual(result.unresolvedTies, []);
+  });
+
+  it("prints intermediate audit rows sorted by score so score movement is visible", () => {
+    const syntheticRecords = [
+      ...presenterRows({
+        presenter: "Middle Presenter",
+        scoresByJudge: { "JUDGE 1 SCORE": ["2", "2", "2", "2"] },
+      }),
+      ...presenterRows({
+        presenter: "High Presenter",
+        scoresByJudge: { "JUDGE 1 SCORE": ["3", "3", "3", "3"] },
+      }),
+      ...presenterRows({
+        presenter: "No Score Presenter",
+      }),
+      ...presenterRows({
+        presenter: "Low Presenter",
+        scoresByJudge: { "JUDGE 1 SCORE": ["1", "1", "1", "1"] },
+      }),
+    ];
+    const result = calculateScores(
+      syntheticRecords,
+      syntheticHeaders.slice(0, 6),
+      "MEAN-CENTERING",
+    );
+
+    const lines = captureConsoleLog(() =>
+      printAuditLog(result, syntheticHeaders.slice(0, 6), syntheticRecords),
+    );
+    const stepOnePresenterLines = linesBetween(
+      lines,
+      "For each presenter and judge, averaged that judge's non-blank criterion scores across the four rows.",
+      "\nStep 2 - Adjust for judge leniency",
+    ).filter((line) => line.startsWith("- "));
+    const stepThreePresenterLines = linesBetween(
+      lines,
+      "Averaged each presenter's adjusted values across judges who scored them.",
+      "\nStep 4 - Award pools",
+    ).filter((line) => line.startsWith("- "));
+
+    assert.deepEqual(
+      stepOnePresenterLines.map((line) => line.match(/^- ([^:]+):/)?.[1]),
+      ["High Presenter", "Middle Presenter", "Low Presenter", "No Score Presenter"],
+    );
+    assert.deepEqual(
+      stepThreePresenterLines.map((line) => line.match(/^- ([^:]+):/)?.[1]),
+      ["High Presenter", "Middle Presenter", "Low Presenter", "No Score Presenter"],
+    );
   });
 
   it("throws on non-numeric score cells instead of silently treating them as blanks", () => {
