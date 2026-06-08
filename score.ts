@@ -12,6 +12,10 @@ const EXPECTED_CRITERIA = [
   "Research Quality & Significance",
   "Overall Impression",
 ] as const;
+const EXPECTED_FIRST_COLUMNS = ["PRESENTER", "TITLE", "GROUP", "CATEGORY", "CRITERION"];
+const VALID_GROUPS = new Set(["LIVE", "PRERECORDED"]);
+const VALID_CATEGORIES = new Set(["undergrad", "graduate"]);
+const VALID_CRITERIA = new Set<string>(EXPECTED_CRITERIA);
 
 const POOLS = [
   {
@@ -72,6 +76,34 @@ export type RankingRow = PresenterSummary & {
   prize: string;
 };
 
+export type TieBreakReason =
+  | "Overall Impression"
+  | "Research Quality & Significance"
+  | "Unresolved";
+
+export type TieBreakAudit = {
+  poolName: string;
+  presenterA: string;
+  presenterB: string;
+  reason: TieBreakReason;
+  adjustedScore: number;
+  overallA: number | null;
+  overallB: number | null;
+  researchA: number | null;
+  researchB: number | null;
+};
+
+export type DataQualityIssue = {
+  kind:
+    | "layout"
+    | "required-field"
+    | "metadata"
+    | "criteria"
+    | "score"
+    | "judge-coverage";
+  message: string;
+};
+
 export type ScoreResult = {
   normalizationMethod: NormalizationMethod;
   presenterSummaries: PresenterSummary[];
@@ -81,7 +113,9 @@ export type ScoreResult = {
   inconsistentPresenters: PresenterSummary[];
   noScorePresenters: PresenterSummary[];
   poolShortfalls: string[];
+  tieBreaks: TieBreakAudit[];
   unresolvedTies: string[];
+  dataQualityIssues: DataQualityIssue[];
 };
 
 export function parseCsv(input: string): string[][] {
@@ -200,6 +234,155 @@ export function groupPresenters(records: CsvRecord[]): PresenterGroup[] {
   }
 
   return [...groups.values()];
+}
+
+export function validateData(
+  records: CsvRecord[],
+  headers: string[],
+  groups: PresenterGroup[],
+  judgeColumns: string[],
+): DataQualityIssue[] {
+  const issues: DataQualityIssue[] = [];
+
+  if (headers.slice(0, 5).join("\u0000") !== EXPECTED_FIRST_COLUMNS.join("\u0000")) {
+    issues.push({
+      kind: "layout",
+      message: `Columns A-E should be ${EXPECTED_FIRST_COLUMNS.join(", ")}`,
+    });
+  }
+
+  if (judgeColumns.length === 0) {
+    issues.push({
+      kind: "layout",
+      message: "No judge score columns found from column F onward",
+    });
+  }
+
+  const titlesByPresenter = new Map<string, Set<string>>();
+  const scoreCountsByJudge = new Map(judgeColumns.map((judge) => [judge, 0]));
+
+  records.forEach((row, index) => {
+    const rowNumber = index + 2;
+    for (const field of EXPECTED_FIRST_COLUMNS) {
+      if ((row[field] ?? "").trim() === "") {
+        issues.push({
+          kind: "required-field",
+          message: `Row ${rowNumber}: missing required ${field}`,
+        });
+      }
+    }
+
+    const presenter = row.PRESENTER.trim();
+    const title = row.TITLE.trim();
+    if (presenter !== "" && title !== "") {
+      const titles = titlesByPresenter.get(presenter) ?? new Set<string>();
+      titles.add(title);
+      titlesByPresenter.set(presenter, titles);
+    }
+
+    const group = row.GROUP.trim();
+    if (group !== "" && !VALID_GROUPS.has(group)) {
+      issues.push({
+        kind: "metadata",
+        message: `Row ${rowNumber}: unexpected GROUP "${group}"`,
+      });
+    }
+
+    const category = row.CATEGORY.trim();
+    if (category !== "" && !VALID_CATEGORIES.has(category)) {
+      issues.push({
+        kind: "metadata",
+        message: `Row ${rowNumber}: unexpected CATEGORY "${category}"`,
+      });
+    }
+
+    const criterion = row.CRITERION.trim();
+    if (criterion !== "" && !VALID_CRITERIA.has(criterion)) {
+      issues.push({
+        kind: "criteria",
+        message: `Row ${rowNumber}: unexpected CRITERION "${criterion}"`,
+      });
+    }
+
+    for (const judge of judgeColumns) {
+      const rawScore = (row[judge] ?? "").trim();
+      if (rawScore === "") {
+        continue;
+      }
+
+      const parsed = Number(rawScore);
+      if (!Number.isFinite(parsed)) {
+        issues.push({
+          kind: "score",
+          message: `Row ${rowNumber}, ${judge}: non-numeric score "${rawScore}"`,
+        });
+        continue;
+      }
+
+      scoreCountsByJudge.set(judge, (scoreCountsByJudge.get(judge) ?? 0) + 1);
+      if (parsed < 1 || parsed > 3) {
+        issues.push({
+          kind: "score",
+          message: `Row ${rowNumber}, ${judge}: score ${rawScore} is outside allowed range 1-3`,
+        });
+      }
+    }
+  });
+
+  for (const [presenter, titles] of titlesByPresenter) {
+    if (titles.size > 1) {
+      issues.push({
+        kind: "metadata",
+        message: `${presenter}: appears with multiple titles [${[...titles].join(" | ")}]`,
+      });
+    }
+  }
+
+  for (const group of groups) {
+    if (group.rows.length !== EXPECTED_CRITERIA.length) {
+      issues.push({
+        kind: "layout",
+        message: `${group.presenter}: expected 4 rows, found ${group.rows.length}`,
+      });
+    }
+
+    const criteria = group.rows.map((row) => row.CRITERION.trim());
+    if (criteria.join("\u0000") !== EXPECTED_CRITERIA.join("\u0000")) {
+      const missing = EXPECTED_CRITERIA.filter((criterion) => !criteria.includes(criterion));
+      const duplicates = criteria.filter(
+        (criterion, index) => criterion !== "" && criteria.indexOf(criterion) !== index,
+      );
+      issues.push({
+        kind: "criteria",
+        message:
+          `${group.presenter}: criteria rows are not the expected four in order` +
+          `; found [${criteria.join(" | ")}]` +
+          (missing.length > 0 ? `; missing [${missing.join(" | ")}]` : "") +
+          (duplicates.length > 0 ? `; duplicate [${[...new Set(duplicates)].join(" | ")}]` : ""),
+      });
+    }
+
+    for (const judge of judgeColumns) {
+      const scoredCriteria = group.rows.filter((row) => (row[judge] ?? "").trim() !== "");
+      if (scoredCriteria.length > 0 && scoredCriteria.length < EXPECTED_CRITERIA.length) {
+        issues.push({
+          kind: "judge-coverage",
+          message: `${group.presenter}, ${judge}: scored ${scoredCriteria.length} of 4 criteria`,
+        });
+      }
+    }
+  }
+
+  for (const [judge, scoreCount] of scoreCountsByJudge) {
+    if (scoreCount === 0) {
+      issues.push({
+        kind: "judge-coverage",
+        message: `${judge}: no scores found in this sheet`,
+      });
+    }
+  }
+
+  return issues;
 }
 
 export function buildSummaries(groups: PresenterGroup[], judgeColumns: string[]): PresenterSummary[] {
@@ -344,6 +527,25 @@ export function hasUnresolvedTie(left: PresenterSummary, right: PresenterSummary
   );
 }
 
+export function tieBreakReason(
+  left: PresenterSummary,
+  right: PresenterSummary,
+): TieBreakReason | null {
+  if (left.adjustedScore !== right.adjustedScore) {
+    return null;
+  }
+
+  if (left.rawOverallAverage !== right.rawOverallAverage) {
+    return "Overall Impression";
+  }
+
+  if (left.rawResearchAverage !== right.rawResearchAverage) {
+    return "Research Quality & Significance";
+  }
+
+  return "Unresolved";
+}
+
 export function buildRanking(poolPresenters: PresenterSummary[], prizes: string[]): RankingRow[] {
   return poolPresenters
     .filter((presenter) => presenter.adjustedScore !== null)
@@ -362,10 +564,12 @@ export function calculateScores(
 ): ScoreResult {
   const judgeColumns = headers.slice(5);
   const presenterGroups = groupPresenters(records);
+  const dataQualityIssues = validateData(records, headers, presenterGroups, judgeColumns);
   const summaries = buildSummaries(presenterGroups, judgeColumns);
   const judgeStats = normalizeScores(summaries, judgeColumns, normalizationMethod);
   const rankings = new Map<string, RankingRow[]>();
   const poolShortfalls: string[] = [];
+  const tieBreaks: TieBreakAudit[] = [];
   const unresolvedTies: string[] = [];
   const winners: string[] = [];
 
@@ -383,7 +587,21 @@ export function calculateScores(
     for (let index = 0; index < ranking.length - 1; index += 1) {
       const current = ranking[index];
       const next = ranking[index + 1];
-      if (current && next && hasUnresolvedTie(current, next)) {
+      const reason = current && next ? tieBreakReason(current, next) : null;
+      if (current && next && reason !== null) {
+        tieBreaks.push({
+          poolName: pool.name,
+          presenterA: current.presenter,
+          presenterB: next.presenter,
+          reason,
+          adjustedScore: current.adjustedScore ?? Number.NaN,
+          overallA: current.rawOverallAverage,
+          overallB: next.rawOverallAverage,
+          researchA: current.rawResearchAverage,
+          researchB: next.rawResearchAverage,
+        });
+      }
+      if (current && next && reason === "Unresolved") {
         unresolvedTies.push(`${pool.name}: ${current.presenter} and ${next.presenter}`);
       }
     }
@@ -404,7 +622,9 @@ export function calculateScores(
     ),
     noScorePresenters: summaries.filter((summary) => summary.judgeCount === 0),
     poolShortfalls,
+    tieBreaks,
     unresolvedTies,
+    dataQualityIssues,
   };
 }
 
@@ -496,6 +716,21 @@ function printAuditLog(result: ScoreResult, headers: string[], records: CsvRecor
     const ranked = rows.map((row) => `${row.rank}. ${row.presenter}`).join("; ");
     console.log(`- ${pool.name}: ${ranked === "" ? "no scored presenters" : ranked}`);
   }
+  console.log(`Tie-break comparisons needed: ${result.tieBreaks.length}.`);
+  if (result.tieBreaks.length === 0) {
+    console.log("- None");
+  } else {
+    for (const tieBreak of result.tieBreaks) {
+      console.log(
+        `- ${tieBreak.poolName}: ${tieBreak.presenterA} vs ${tieBreak.presenterB} used ${tieBreak.reason} ` +
+          `(adjusted=${formatNumber(tieBreak.adjustedScore)}, overall ${formatNumber(
+            tieBreak.overallA,
+          )} vs ${formatNumber(tieBreak.overallB)}, research ${formatNumber(
+            tieBreak.researchA,
+          )} vs ${formatNumber(tieBreak.researchB)})`,
+      );
+    }
+  }
 
   console.log("\nFinal ranked output");
 }
@@ -506,6 +741,7 @@ export function printWarnings(
   judgeStats: JudgeStats[],
   poolShortfalls: string[],
   unresolvedTies: string[],
+  dataQualityIssues: DataQualityIssue[],
 ): void {
   const fallbackJudges = judgeStats.filter((judge) => judge.usedFallback);
 
@@ -561,6 +797,15 @@ export function printWarnings(
       console.log(`- ${tie}`);
     }
   }
+
+  console.log("\nOther data quality checks:");
+  if (dataQualityIssues.length === 0) {
+    console.log("- None");
+  } else {
+    for (const issue of dataQualityIssues) {
+      console.log(`- [${issue.kind}] ${issue.message}`);
+    }
+  }
 }
 
 export function main(): void {
@@ -593,6 +838,7 @@ export function main(): void {
     result.judgeStats,
     result.poolShortfalls,
     result.unresolvedTies,
+    result.dataQualityIssues,
   );
 }
 

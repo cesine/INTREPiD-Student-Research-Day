@@ -19,6 +19,44 @@ function rowByPresenter(rows, presenter) {
   return row;
 }
 
+const syntheticHeaders = [
+  "PRESENTER",
+  "TITLE",
+  "GROUP",
+  "CATEGORY",
+  "CRITERION",
+  "JUDGE 1 SCORE",
+  "JUDGE 2 SCORE",
+  "JUDGE 3 SCORE",
+];
+
+const expectedCriteria = [
+  "Organization & Visuals",
+  "Communication & Delivery",
+  "Research Quality & Significance",
+  "Overall Impression",
+];
+
+function presenterRows({
+  presenter,
+  title = presenter,
+  group = "LIVE",
+  category = "undergrad",
+  scoresByJudge = {},
+  rowOverrides = [],
+}) {
+  return expectedCriteria.map((criterion, index) => ({
+    PRESENTER: presenter,
+    TITLE: title,
+    GROUP: rowOverrides[index]?.GROUP ?? group,
+    CATEGORY: rowOverrides[index]?.CATEGORY ?? category,
+    CRITERION: criterion,
+    "JUDGE 1 SCORE": scoresByJudge["JUDGE 1 SCORE"]?.[index] ?? "",
+    "JUDGE 2 SCORE": scoresByJudge["JUDGE 2 SCORE"]?.[index] ?? "",
+    "JUDGE 3 SCORE": scoresByJudge["JUDGE 3 SCORE"]?.[index] ?? "",
+  }));
+}
+
 describe("research day scoring", () => {
   const { headers, records } = loadRecords(resolve("data.csv"));
 
@@ -40,12 +78,6 @@ describe("research day scoring", () => {
       "JUDGE 7 SCORE",
     ]);
 
-    const expectedCriteria = [
-      "Organization & Visuals",
-      "Communication & Delivery",
-      "Research Quality & Significance",
-      "Overall Impression",
-    ];
     const presenterGroups = groupPresenters(records);
 
     assert.equal(records.length, presenterGroups.length * expectedCriteria.length);
@@ -73,7 +105,41 @@ describe("research day scoring", () => {
   });
 
   it("ranks award pools by mean-centered adjusted score and assigns prizes", () => {
-    const result = calculateScores(records, headers, "MEAN-CENTERING");
+    const rankingRecords = [
+      ...presenterRows({
+        presenter: "Undergrad First",
+        scoresByJudge: { "JUDGE 1 SCORE": ["3", "3", "3", "3"] },
+      }),
+      ...presenterRows({
+        presenter: "Undergrad Second",
+        scoresByJudge: { "JUDGE 1 SCORE": ["2", "2", "2", "2"] },
+      }),
+      ...presenterRows({
+        presenter: "Undergrad Third",
+        scoresByJudge: { "JUDGE 1 SCORE": ["1", "1", "1", "1"] },
+      }),
+      ...presenterRows({
+        presenter: "Graduate First",
+        category: "graduate",
+        scoresByJudge: { "JUDGE 1 SCORE": ["3", "3", "3", "3"] },
+      }),
+      ...presenterRows({
+        presenter: "Prerecorded First",
+        group: "PRERECORDED",
+        scoresByJudge: { "JUDGE 1 SCORE": ["2.5", "2.5", "2.5", "2.5"] },
+      }),
+      ...presenterRows({
+        presenter: "Prerecorded Second",
+        group: "PRERECORDED",
+        scoresByJudge: { "JUDGE 1 SCORE": ["1.5", "1.5", "1.5", "1.5"] },
+      }),
+    ];
+
+    const result = calculateScores(
+      rankingRecords,
+      syntheticHeaders.slice(0, 6),
+      "MEAN-CENTERING",
+    );
 
     assert.equal(result.normalizationMethod, "MEAN-CENTERING");
 
@@ -81,9 +147,9 @@ describe("research day scoring", () => {
     assert.deepEqual(
       undergraduateLive.map((row) => [row.rank, row.presenter, row.prize]),
       [
-        [1, "Yeva Gevorgyan", "$150"],
-        [2, "Kateryna Hanhur", "$100"],
-        [3, "Samuel Makaron", "$50"],
+        [1, "Undergrad First", "$150"],
+        [2, "Undergrad Second", "$100"],
+        [3, "Undergrad Third", "$50"],
       ],
     );
 
@@ -91,8 +157,7 @@ describe("research day scoring", () => {
     assert.deepEqual(
       graduate.map((row) => [row.rank, row.presenter, row.prize]),
       [
-        [1, "Malachy Bodak", "$150"],
-        [2, "Mariana Vasilita", ""],
+        [1, "Graduate First", "$150"],
       ],
     );
 
@@ -100,45 +165,61 @@ describe("research day scoring", () => {
     assert.deepEqual(
       prerecorded.map((row) => [row.rank, row.presenter, row.prize]),
       [
-        [1, "Jaren Tasmin", "$100"],
-        [2, "Denisse Ramos", "$50"],
-        [3, "Maureen Sam-Okomgboeso", ""],
-        [4, "Teneesha Young", ""],
+        [1, "Prerecorded First", "$100"],
+        [2, "Prerecorded Second", "$50"],
       ],
     );
 
     assert.deepEqual(result.winners, [
-      "Undergraduate Live 1: Yeva Gevorgyan ($150)",
-      "Undergraduate Live 2: Kateryna Hanhur ($100)",
-      "Undergraduate Live 3: Samuel Makaron ($50)",
-      "Graduate 1: Malachy Bodak ($150)",
-      "Pre-recorded 1: Jaren Tasmin ($100)",
-      "Pre-recorded 2: Denisse Ramos ($50)",
+      "Undergraduate Live 1: Undergrad First ($150)",
+      "Undergraduate Live 2: Undergrad Second ($100)",
+      "Undergraduate Live 3: Undergrad Third ($50)",
+      "Graduate 1: Graduate First ($150)",
+      "Pre-recorded 1: Prerecorded First ($100)",
+      "Pre-recorded 2: Prerecorded Second ($50)",
     ]);
   });
 
   it("calculates raw means, adjusted scores, and judge counts from non-blank scores", () => {
-    const result = calculateScores(records, headers, "MEAN-CENTERING");
+    const scoreRecords = [
+      ...presenterRows({
+        presenter: "Two Judge Presenter",
+        scoresByJudge: {
+          "JUDGE 1 SCORE": ["3", "3", "3", "3"],
+          "JUDGE 2 SCORE": ["2", "2", "", ""],
+        },
+      }),
+      ...presenterRows({
+        presenter: "One Judge Presenter",
+        scoresByJudge: {
+          "JUDGE 1 SCORE": ["1", "1", "1", "1"],
+        },
+      }),
+    ];
+    const result = calculateScores(scoreRecords, syntheticHeaders, "MEAN-CENTERING");
     const undergraduateLive = result.rankings.get("Undergraduate Live");
-    const yeva = rowByPresenter(undergraduateLive, "Yeva Gevorgyan");
-    const samuel = rowByPresenter(undergraduateLive, "Samuel Makaron");
-    const teneesha = rowByPresenter(result.rankings.get("Pre-recorded"), "Teneesha Young");
+    const twoJudgePresenter = rowByPresenter(undergraduateLive, "Two Judge Presenter");
+    const oneJudgePresenter = rowByPresenter(undergraduateLive, "One Judge Presenter");
 
-    closeTo(yeva.adjustedScore, 0.3842592593);
-    closeTo(yeva.rawMean, 2.7083333333);
-    assert.equal(yeva.judgeCount, 3);
+    closeTo(twoJudgePresenter.adjustedScore, 0.5);
+    closeTo(twoJudgePresenter.rawMean, 2.5);
+    assert.equal(twoJudgePresenter.judgeCount, 2);
 
-    closeTo(samuel.adjustedScore, -0.5324074074);
-    closeTo(samuel.rawMean, 1.7916666667);
-    assert.equal(samuel.judgeCount, 3);
-
-    closeTo(teneesha.adjustedScore, -0.4034722222);
-    closeTo(teneesha.rawMean, 1.78125);
-    assert.equal(teneesha.judgeCount, 4);
+    closeTo(oneJudgePresenter.adjustedScore, -1);
+    closeTo(oneJudgePresenter.rawMean, 1);
+    assert.equal(oneJudgePresenter.judgeCount, 1);
   });
 
   it("flags required data-quality conditions", () => {
-    const result = calculateScores(records, headers, "MEAN-CENTERING");
+    const qualityRecords = [
+      ...presenterRows({
+        presenter: "Mixed Metadata Presenter",
+        scoresByJudge: { "JUDGE 1 SCORE": ["2", "2", "2", "2"] },
+        rowOverrides: [{}, {}, { CATEGORY: "graduate" }, {}],
+      }),
+      ...presenterRows({ presenter: "No Score Presenter" }),
+    ];
+    const result = calculateScores(qualityRecords, syntheticHeaders, "MEAN-CENTERING");
 
     assert.deepEqual(
       result.inconsistentPresenters.map((presenter) => ({
@@ -148,72 +229,404 @@ describe("research day scoring", () => {
       })),
       [
         {
-          presenter: "Malachy Bodak",
+          presenter: "Mixed Metadata Presenter",
           groupsSeen: ["LIVE"],
-          categoriesSeen: ["graduate", "undergrad"],
+          categoriesSeen: ["undergrad", "graduate"],
         },
       ],
     );
 
     assert.deepEqual(
       result.noScorePresenters.map((presenter) => presenter.presenter),
-      [
-        "Ashley Marte",
-        "Richard Martinez Loyola",
-        "Ansa Alam",
-        "Ava Omidi",
-        "Anik Rahman",
-        "Gabriela Martinez Loyola",
-        "Llewellyn Duncan",
-      ],
+      ["No Score Presenter"],
     );
 
-    assert.deepEqual(result.poolShortfalls, []);
+    assert.deepEqual(result.poolShortfalls, [
+      "Undergraduate Live: 1 scored presenter(s) for 3 prize(s)",
+      "Graduate: 0 scored presenter(s) for 1 prize(s)",
+      "Pre-recorded: 0 scored presenter(s) for 2 prize(s)",
+    ]);
     assert.deepEqual(result.unresolvedTies, []);
   });
 
   it("falls back from z-score to mean-centering when a judge has no spread", () => {
-    const syntheticHeaders = [
-      "PRESENTER",
-      "TITLE",
-      "GROUP",
-      "CATEGORY",
-      "CRITERION",
-      "JUDGE 1 SCORE",
-    ];
     const syntheticRecords = [
-      ["Presenter A", "A", "LIVE", "undergrad"],
-      ["Presenter B", "B", "LIVE", "undergrad"],
-    ].flatMap(([presenter, title, group, category]) =>
-      [
-        "Organization & Visuals",
-        "Communication & Delivery",
-        "Research Quality & Significance",
-        "Overall Impression",
-      ].map((criterion) => ({
-        PRESENTER: presenter,
-        TITLE: title,
-        GROUP: group,
-        CATEGORY: category,
-        CRITERION: criterion,
-        "JUDGE 1 SCORE": "2",
-      })),
-    );
+      ...presenterRows({
+        presenter: "Presenter A",
+        title: "A",
+        scoresByJudge: { "JUDGE 1 SCORE": ["2", "2", "2", "2"] },
+      }),
+      ...presenterRows({
+        presenter: "Presenter B",
+        title: "B",
+        scoresByJudge: { "JUDGE 1 SCORE": ["2", "2", "2", "2"] },
+      }),
+    ];
 
-    const result = calculateScores(syntheticRecords, syntheticHeaders, "Z-SCORE");
-    assert.deepEqual(result.judgeStats, [
-      {
-        judge: "JUDGE 1 SCORE",
-        mean: 2,
-        standardDeviation: 0,
-        scoreCount: 2,
-        usedFallback: true,
-      },
-    ]);
+    const result = calculateScores(
+      syntheticRecords,
+      syntheticHeaders.slice(0, 6),
+      "Z-SCORE",
+    );
+    assert.deepEqual(result.judgeStats, [{
+      judge: "JUDGE 1 SCORE",
+      mean: 2,
+      standardDeviation: 0,
+      scoreCount: 2,
+      usedFallback: true,
+    }]);
 
     for (const row of result.rankings.get("Undergraduate Live")) {
       assert.equal(row.adjustedScore, 0);
       assert.equal(row.rawMean, 2);
     }
+  });
+
+  it("flags a presenter with no scores and excludes them from ranking and prizes", () => {
+    const syntheticRecords = [
+      ...presenterRows({
+        presenter: "Scored Presenter",
+        scoresByJudge: { "JUDGE 1 SCORE": ["3", "3", "3", "3"] },
+      }),
+      ...presenterRows({ presenter: "No Score Presenter" }),
+    ];
+
+    const result = calculateScores(syntheticRecords, syntheticHeaders, "MEAN-CENTERING");
+    assert.deepEqual(
+      result.noScorePresenters.map((presenter) => presenter.presenter),
+      ["No Score Presenter"],
+    );
+    assert.deepEqual(
+      result.rankings.get("Undergraduate Live").map((row) => row.presenter),
+      ["Scored Presenter"],
+    );
+    assert.deepEqual(result.poolShortfalls, [
+      "Undergraduate Live: 1 scored presenter(s) for 3 prize(s)",
+      "Graduate: 0 scored presenter(s) for 1 prize(s)",
+      "Pre-recorded: 0 scored presenter(s) for 2 prize(s)",
+    ]);
+  });
+
+  it("falls back for a judge who gives only 3s when z-score normalization is selected", () => {
+    const syntheticRecords = [
+      ...presenterRows({
+        presenter: "High Presenter",
+        scoresByJudge: {
+          "JUDGE 1 SCORE": ["3", "3", "3", "3"],
+          "JUDGE 2 SCORE": ["3", "3", "3", "3"],
+        },
+      }),
+      ...presenterRows({
+        presenter: "Low Presenter",
+        scoresByJudge: {
+          "JUDGE 1 SCORE": ["3", "3", "3", "3"],
+          "JUDGE 2 SCORE": ["1", "1", "1", "1"],
+        },
+      }),
+    ];
+
+    const result = calculateScores(syntheticRecords, syntheticHeaders, "Z-SCORE");
+    const constantJudge = result.judgeStats.find(
+      (judge) => judge.judge === "JUDGE 1 SCORE",
+    );
+    const variableJudge = result.judgeStats.find(
+      (judge) => judge.judge === "JUDGE 2 SCORE",
+    );
+
+    assert.equal(constantJudge.usedFallback, true);
+    assert.equal(constantJudge.standardDeviation, 0);
+    assert.equal(variableJudge.usedFallback, false);
+
+    const highPresenter = rowByPresenter(
+      result.rankings.get("Undergraduate Live"),
+      "High Presenter",
+    );
+    const lowPresenter = rowByPresenter(
+      result.rankings.get("Undergraduate Live"),
+      "Low Presenter",
+    );
+
+    closeTo(highPresenter.adjustedScore, 0.5);
+    closeTo(lowPresenter.adjustedScore, -0.5);
+  });
+
+  it("normalizes correctly when judges score only some session presentations", () => {
+    const syntheticRecords = [
+      ...presenterRows({
+        presenter: "Session A Strong",
+        scoresByJudge: {
+          "JUDGE 1 SCORE": ["3", "3", "3", "3"],
+          "JUDGE 2 SCORE": ["2", "2", "2", "2"],
+        },
+      }),
+      ...presenterRows({
+        presenter: "Session A Weak",
+        scoresByJudge: {
+          "JUDGE 1 SCORE": ["1", "1", "1", "1"],
+          "JUDGE 2 SCORE": ["2", "2", "2", "2"],
+        },
+      }),
+      ...presenterRows({
+        presenter: "Session B Strong",
+        scoresByJudge: {
+          "JUDGE 2 SCORE": ["3", "3", "3", "3"],
+          "JUDGE 3 SCORE": ["2", "2", "2", "2"],
+        },
+      }),
+      ...presenterRows({
+        presenter: "Session B Weak",
+        scoresByJudge: {
+          "JUDGE 2 SCORE": ["1", "1", "1", "1"],
+          "JUDGE 3 SCORE": ["2", "2", "2", "2"],
+        },
+      }),
+    ];
+
+    const result = calculateScores(syntheticRecords, syntheticHeaders, "MEAN-CENTERING");
+    assert.deepEqual(
+      result.judgeStats.map((judge) => [judge.judge, judge.scoreCount, judge.mean]),
+      [
+        ["JUDGE 1 SCORE", 2, 2],
+        ["JUDGE 2 SCORE", 4, 2],
+        ["JUDGE 3 SCORE", 2, 2],
+      ],
+    );
+
+    closeTo(
+      rowByPresenter(result.rankings.get("Undergraduate Live"), "Session A Strong")
+        .adjustedScore,
+      0.5,
+    );
+    closeTo(
+      rowByPresenter(result.rankings.get("Undergraduate Live"), "Session B Strong")
+        .adjustedScore,
+      0.5,
+    );
+    closeTo(
+      rowByPresenter(result.rankings.get("Undergraduate Live"), "Session A Weak")
+        .adjustedScore,
+      -0.5,
+    );
+    closeTo(
+      rowByPresenter(result.rankings.get("Undergraduate Live"), "Session B Weak")
+        .adjustedScore,
+      -0.5,
+    );
+  });
+
+  it("flags inconsistent group and category rows for the same presenter", () => {
+    const syntheticRecords = presenterRows({
+      presenter: "Mixed Metadata Presenter",
+      scoresByJudge: { "JUDGE 1 SCORE": ["2", "2", "2", "2"] },
+      rowOverrides: [
+        {},
+        { GROUP: "PRERECORDED" },
+        { CATEGORY: "graduate" },
+        {},
+      ],
+    });
+
+    const result = calculateScores(syntheticRecords, syntheticHeaders, "MEAN-CENTERING");
+    assert.deepEqual(
+      result.inconsistentPresenters.map((presenter) => ({
+        presenter: presenter.presenter,
+        groupsSeen: presenter.groupsSeen,
+        categoriesSeen: presenter.categoriesSeen,
+      })),
+      [{
+        presenter: "Mixed Metadata Presenter",
+        groupsSeen: ["LIVE", "PRERECORDED"],
+        categoriesSeen: ["undergrad", "graduate"],
+      }],
+    );
+  });
+
+  it("flags unresolved ties after adjusted score and both raw tie-breakers match", () => {
+    const syntheticRecords = [
+      ...presenterRows({
+        presenter: "Tie A",
+        scoresByJudge: { "JUDGE 1 SCORE": ["2", "2", "2", "2"] },
+      }),
+      ...presenterRows({
+        presenter: "Tie B",
+        scoresByJudge: { "JUDGE 1 SCORE": ["2", "2", "2", "2"] },
+      }),
+    ];
+
+    const result = calculateScores(syntheticRecords, syntheticHeaders, "MEAN-CENTERING");
+    assert.deepEqual(result.unresolvedTies, ["Undergraduate Live: Tie A and Tie B"]);
+    assert.deepEqual(
+      result.tieBreaks.map((tieBreak) => ({
+        poolName: tieBreak.poolName,
+        presenterA: tieBreak.presenterA,
+        presenterB: tieBreak.presenterB,
+        reason: tieBreak.reason,
+      })),
+      [{
+        poolName: "Undergraduate Live",
+        presenterA: "Tie A",
+        presenterB: "Tie B",
+        reason: "Unresolved",
+      }],
+    );
+  });
+
+  it("records when Overall Impression breaks an adjusted-score tie", () => {
+    const syntheticRecords = [
+      ...presenterRows({
+        presenter: "Better Overall",
+        scoresByJudge: { "JUDGE 1 SCORE": ["2", "2", "1", "3"] },
+      }),
+      ...presenterRows({
+        presenter: "Lower Overall",
+        scoresByJudge: { "JUDGE 1 SCORE": ["2", "2", "3", "1"] },
+      }),
+    ];
+
+    const result = calculateScores(syntheticRecords, syntheticHeaders, "MEAN-CENTERING");
+
+    assert.deepEqual(
+      result.rankings.get("Undergraduate Live").map((row) => row.presenter),
+      ["Better Overall", "Lower Overall"],
+    );
+    assert.deepEqual(
+      result.tieBreaks.map((tieBreak) => ({
+        presenterA: tieBreak.presenterA,
+        presenterB: tieBreak.presenterB,
+        reason: tieBreak.reason,
+        overallA: tieBreak.overallA,
+        overallB: tieBreak.overallB,
+      })),
+      [{
+        presenterA: "Better Overall",
+        presenterB: "Lower Overall",
+        reason: "Overall Impression",
+        overallA: 3,
+        overallB: 1,
+      }],
+    );
+    assert.deepEqual(result.unresolvedTies, []);
+  });
+
+  it("records when Research Quality breaks a tie after Overall Impression also ties", () => {
+    const syntheticRecords = [
+      ...presenterRows({
+        presenter: "Better Research",
+        scoresByJudge: { "JUDGE 1 SCORE": ["1", "2", "3", "2"] },
+      }),
+      ...presenterRows({
+        presenter: "Lower Research",
+        scoresByJudge: { "JUDGE 1 SCORE": ["3", "2", "1", "2"] },
+      }),
+    ];
+
+    const result = calculateScores(syntheticRecords, syntheticHeaders, "MEAN-CENTERING");
+
+    assert.deepEqual(
+      result.rankings.get("Undergraduate Live").map((row) => row.presenter),
+      ["Better Research", "Lower Research"],
+    );
+    assert.deepEqual(
+      result.tieBreaks.map((tieBreak) => ({
+        presenterA: tieBreak.presenterA,
+        presenterB: tieBreak.presenterB,
+        reason: tieBreak.reason,
+        overallA: tieBreak.overallA,
+        overallB: tieBreak.overallB,
+        researchA: tieBreak.researchA,
+        researchB: tieBreak.researchB,
+      })),
+      [{
+        presenterA: "Better Research",
+        presenterB: "Lower Research",
+        reason: "Research Quality & Significance",
+        overallA: 2,
+        overallB: 2,
+        researchA: 3,
+        researchB: 1,
+      }],
+    );
+    assert.deepEqual(result.unresolvedTies, []);
+  });
+
+  it("throws on non-numeric score cells instead of silently treating them as blanks", () => {
+    const syntheticRecords = presenterRows({
+      presenter: "Bad Score Presenter",
+      scoresByJudge: { "JUDGE 1 SCORE": ["3", "oops", "2", "1"] },
+    });
+
+    assert.throws(
+      () => calculateScores(syntheticRecords, syntheticHeaders, "MEAN-CENTERING"),
+      /Invalid score value: oops/,
+    );
+  });
+
+  it("reports additional data quality issues without blocking valid numeric scoring", () => {
+    const malformedRows = presenterRows({
+      presenter: "Malformed Presenter",
+      title: "First Title",
+      group: "REMOTE",
+      category: "postdoc",
+      scoresByJudge: {
+        "JUDGE 1 SCORE": ["4", "", "", ""],
+        "JUDGE 2 SCORE": ["2", "2", "2", "2"],
+      },
+      rowOverrides: [
+        {},
+        { GROUP: "LIVE", CATEGORY: "undergrad" },
+        { GROUP: "LIVE", CATEGORY: "undergrad" },
+        { GROUP: "LIVE", CATEGORY: "undergrad" },
+      ],
+    });
+    malformedRows[2].CRITERION = "Unexpected Criterion";
+
+    const duplicateTitleRows = presenterRows({
+      presenter: "Malformed Presenter",
+      title: "Second Title",
+      scoresByJudge: { "JUDGE 2 SCORE": ["2", "2", "2", "2"] },
+    });
+
+    const result = calculateScores(
+      [...malformedRows, ...duplicateTitleRows],
+      syntheticHeaders,
+      "MEAN-CENTERING",
+    );
+    const issueMessages = result.dataQualityIssues.map((issue) => issue.message);
+
+    assert.ok(issueMessages.includes('Row 2: unexpected GROUP "REMOTE"'));
+    assert.ok(issueMessages.includes('Row 2: unexpected CATEGORY "postdoc"'));
+    assert.ok(issueMessages.includes('Row 4: unexpected CRITERION "Unexpected Criterion"'));
+    assert.ok(
+      issueMessages.includes("Row 2, JUDGE 1 SCORE: score 4 is outside allowed range 1-3"),
+    );
+    assert.ok(
+      issueMessages.includes(
+        "Malformed Presenter: appears with multiple titles [First Title | Second Title]",
+      ),
+    );
+    assert.ok(
+      issueMessages.includes(
+        "Malformed Presenter: criteria rows are not the expected four in order; found [Organization & Visuals | Communication & Delivery | Unexpected Criterion | Overall Impression]; missing [Research Quality & Significance]",
+      ),
+    );
+    assert.ok(
+      issueMessages.includes("Malformed Presenter, JUDGE 1 SCORE: scored 1 of 4 criteria"),
+    );
+    assert.ok(issueMessages.includes("JUDGE 3 SCORE: no scores found in this sheet"));
+  });
+
+  it("reports missing required fields and non-four-row presenter blocks", () => {
+    const syntheticRecords = presenterRows({
+      presenter: "Short Block Presenter",
+      scoresByJudge: { "JUDGE 1 SCORE": ["2", "2", "2", "2"] },
+    }).slice(0, 3);
+    syntheticRecords[1].TITLE = "";
+
+    const result = calculateScores(syntheticRecords, syntheticHeaders, "MEAN-CENTERING");
+    const issueMessages = result.dataQualityIssues.map((issue) => issue.message);
+
+    assert.ok(issueMessages.includes("Row 3: missing required TITLE"));
+    assert.ok(issueMessages.includes("Short Block Presenter: expected 4 rows, found 2"));
+    assert.ok(issueMessages.includes("Short Block Presenter: expected 4 rows, found 1"));
   });
 });
