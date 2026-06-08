@@ -157,7 +157,7 @@ describe("research day scoring", () => {
     assert.deepEqual(
       graduate.map((row) => [row.rank, row.presenter, row.prize]),
       [
-        [1, "Graduate First", "$150"],
+        [1, "Graduate First", "$100"],
       ],
     );
 
@@ -165,8 +165,8 @@ describe("research day scoring", () => {
     assert.deepEqual(
       prerecorded.map((row) => [row.rank, row.presenter, row.prize]),
       [
-        [1, "Prerecorded First", "$100"],
-        [2, "Prerecorded Second", "$50"],
+        [1, "Prerecorded First", "$150"],
+        [2, "Prerecorded Second", ""],
       ],
     );
 
@@ -174,9 +174,8 @@ describe("research day scoring", () => {
       "Undergraduate Live 1: Undergrad First ($150)",
       "Undergraduate Live 2: Undergrad Second ($100)",
       "Undergraduate Live 3: Undergrad Third ($50)",
-      "Graduate 1: Graduate First ($150)",
-      "Pre-recorded 1: Prerecorded First ($100)",
-      "Pre-recorded 2: Prerecorded Second ($50)",
+      "Graduate 1: Graduate First ($100)",
+      "Pre-recorded 1: Prerecorded First ($150)",
     ]);
   });
 
@@ -243,8 +242,8 @@ describe("research day scoring", () => {
 
     assert.deepEqual(result.poolShortfalls, [
       "Undergraduate Live: 1 scored presenter(s) for 3 prize(s)",
-      "Graduate: 0 scored presenter(s) for 1 prize(s)",
-      "Pre-recorded: 0 scored presenter(s) for 2 prize(s)",
+      "Graduate: 0 scored presenter(s) for 2 prize(s)",
+      "Pre-recorded: 0 scored presenter(s) for 1 prize(s)",
     ]);
     assert.deepEqual(result.unresolvedTies, []);
   });
@@ -302,8 +301,8 @@ describe("research day scoring", () => {
     );
     assert.deepEqual(result.poolShortfalls, [
       "Undergraduate Live: 1 scored presenter(s) for 3 prize(s)",
-      "Graduate: 0 scored presenter(s) for 1 prize(s)",
-      "Pre-recorded: 0 scored presenter(s) for 2 prize(s)",
+      "Graduate: 0 scored presenter(s) for 2 prize(s)",
+      "Pre-recorded: 0 scored presenter(s) for 1 prize(s)",
     ]);
   });
 

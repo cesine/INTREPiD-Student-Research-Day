@@ -26,12 +26,12 @@ const POOLS = [
   },
   {
     name: "Graduate",
-    prizes: ["$150"],
+    prizes: ["$100", "$50"],
     includes: (presenter: PresenterSummary) => presenter.category === "graduate",
   },
   {
     name: "Pre-recorded",
-    prizes: ["$100", "$50"],
+    prizes: ["$150"],
     includes: (presenter: PresenterSummary) =>
       presenter.group === "PRERECORDED" && presenter.category === "undergrad",
   },
