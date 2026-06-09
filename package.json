@@ -1,0 +1,17 @@
+{
+  "name": "research-day-scoring",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "score": "node --experimental-strip-types score.ts",
+    "test": "node --experimental-strip-types ./node_modules/mocha/bin/mocha.js \"test/**/*.test.mjs\""
+  },
+  "devDependencies": {
+    "mocha": "^11.7.6"
+  },
+  "overrides": {
+    "diff": "^9.0.0",
+    "serialize-javascript": "^7.0.5"
+  }
+}
